@@ -14,7 +14,7 @@ start:
     mov al, 'B'
     int 0x10
 
-    ; Читаем stage2 (сектор 2, 64 сектора)
+    ; Читаем stage2 (сектор 2, 64 сектора) на 0x7E00
     mov ah, 0x02
     mov al, 64
     mov ch, 0

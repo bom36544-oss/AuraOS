@@ -4,12 +4,28 @@
 stage2:
     cli
 
+    ; Вывод "2"
     mov ah, 0x0E
     mov al, '2'
     int 0x10
 
+    ; Загружаем ядро (сектор 3, 100 секторов) на 0x1000
+    mov ah, 0x02
+    mov al, 100
+    mov ch, 0
+    mov cl, 3
+    mov dh, 0
+    mov bx, 0x1000
+    int 0x13
+
+    ; Вывод "K"
+    mov ah, 0x0E
+    mov al, 'K'
+    int 0x10
+
     lgdt [gdt_descriptor]
 
+    ; Вывод "G"
     mov ah, 0x0E
     mov al, 'G'
     int 0x10
@@ -19,7 +35,7 @@ stage2:
     or eax, 0x1
     mov cr0, eax
 
-    ; Far jump в protected mode
+    ; Переход
     jmp 0x08:protected_mode
 
 [bits 32]
@@ -32,9 +48,8 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Вывод "P" в VGA (НЕ BIOS!)
-    mov byte [0xB8000], 'P'
-    mov byte [0xB8001], 0x1F
+    ; Вызов ядра на C (kernel_main — первый в .text)
+    call 0x1000
 
     hlt
     jmp $
