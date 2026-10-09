@@ -9,7 +9,10 @@ void hide_cursor();
 unsigned char keyboard_read();
 void delay(int count);
 void clear_screen(volatile char *video);
-void draw_logo_at(volatile char *video, int y, unsigned char color);
+void draw_big_char(volatile char *video, int x, int y, char c, unsigned char color);
+void draw_logo_big(volatile char *video, int y, unsigned char color);
+void draw_box(volatile char *video, int x, int y, int w, int h, unsigned char color);
+void draw_menu_item(volatile char *video, int y, const char *text, int selected);
 void redraw_menu(volatile char *video, int selected);
 
 // ============================================
@@ -21,19 +24,19 @@ void kernel_main(void) {
     hide_cursor();
     clear_screen(video);
 
-    // ===== АНИМАЦИЯ: логотип снизу вверх =====
-    for (int y = VGA_HEIGHT - 1; y >= 2; y--) {
+    // ===== АНИМАЦИЯ: большой логотип снизу вверх =====
+    for (int y = VGA_HEIGHT - 2; y >= 2; y--) {
         clear_screen(video);
-        draw_logo_at(video, y, 0x0D);  // ярко-фиолетовый
+        draw_logo_big(video, y, 0x0D);  // ярко-фиолетовый
         delay(8000000);
     }
 
     // Пауза
     delay(10000000);
     clear_screen(video);
-    draw_logo_at(video, 2, 0x0D);  // на месте
+    draw_logo_big(video, 2, 0x0D);
 
-    // Меню (без линии)
+    // Меню
     redraw_menu(video, 0);
 
     // ===== Цикл клавиатуры =====
@@ -41,12 +44,12 @@ void kernel_main(void) {
     while (1) {
         unsigned char sc = keyboard_read();
 
-        if (sc == 0x48) {        // стрелка вверх
+        if (sc == 0x48) {        // вверх
             if (selected != 0) {
                 selected = 0;
                 redraw_menu(video, selected);
             }
-        } else if (sc == 0x50) { // стрелка вниз
+        } else if (sc == 0x50) { // вниз
             if (selected != 1) {
                 selected = 1;
                 redraw_menu(video, selected);
@@ -69,7 +72,7 @@ void kernel_main(void) {
 }
 
 // ============================================
-// Вспомогательные функции
+// Вспомогательные
 // ============================================
 
 unsigned char inb(unsigned short port) {
@@ -103,62 +106,107 @@ void clear_screen(volatile char *video) {
     }
 }
 
-void draw_logo_at(volatile char *video, int y, unsigned char color) {
-    int x = (VGA_WIDTH - 9) / 2;
-    int ti = (y * VGA_WIDTH + x) * 2;
-    video[ti + 0]  = 'A';  video[ti + 1]  = color;
-    video[ti + 2]  = 'u';  video[ti + 3]  = color;
-    video[ti + 4]  = 'r';  video[ti + 5]  = color;
-    video[ti + 6]  = 'a';  video[ti + 7]  = color;
-    video[ti + 8]  = ' ';  video[ti + 9]  = color;
-    video[ti + 10] = 'B';  video[ti + 11] = color;
-    video[ti + 12] = 'o';  video[ti + 13] = color;
-    video[ti + 14] = 'o';  video[ti + 15] = color;
-    video[ti + 16] = 't';  video[ti + 17] = color;
+// ===== Большой символ (2×2 знакоместа) =====
+void draw_big_char(volatile char *video, int x, int y, char c, unsigned char color) {
+    int p1 = (y * VGA_WIDTH + x) * 2;
+    video[p1] = c;     video[p1 + 1] = color;
+    int p2 = (y * VGA_WIDTH + x + 1) * 2;
+    video[p2] = c;     video[p2 + 1] = color;
+    int p3 = ((y + 1) * VGA_WIDTH + x) * 2;
+    video[p3] = c;     video[p3 + 1] = color;
+    int p4 = ((y + 1) * VGA_WIDTH + x + 1) * 2;
+    video[p4] = c;     video[p4 + 1] = color;
 }
 
-// ===== Меню (без линии) =====
-void redraw_menu(volatile char *video, int selected) {
-    int menu_y = 11;
+// ===== Большой логотип "Aura Boot" =====
+void draw_logo_big(volatile char *video, int y, unsigned char color) {
+    // "Aura Boot" — 9 символов × 2 = 18
+    int total_w = 9 * 2;
+    int x = (VGA_WIDTH - total_w) / 2;
 
+    draw_big_char(video, x + 0,  y, 'A', color);
+    draw_big_char(video, x + 2,  y, 'u', color);
+    draw_big_char(video, x + 4,  y, 'r', color);
+    draw_big_char(video, x + 6,  y, 'a', color);
+    draw_big_char(video, x + 8,  y, ' ', color);
+    draw_big_char(video, x + 10, y, 'B', color);
+    draw_big_char(video, x + 12, y, 'o', color);
+    draw_big_char(video, x + 14, y, 'o', color);
+    draw_big_char(video, x + 16, y, 't', color);
+}
+
+// ===== Рамка вокруг меню =====
+void draw_box(volatile char *video, int x, int y, int w, int h, unsigned char color) {
+    // Верхняя граница
+    video[(y * VGA_WIDTH + x) * 2] = '+';
+    video[(y * VGA_WIDTH + x) * 2 + 1] = color;
+    for (int i = 1; i < w - 1; i++) {
+        video[(y * VGA_WIDTH + x + i) * 2] = '-';
+        video[(y * VGA_WIDTH + x + i) * 2 + 1] = color;
+    }
+    video[(y * VGA_WIDTH + x + w - 1) * 2] = '+';
+    video[(y * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+
+    // Нижняя граница
+    video[((y + h - 1) * VGA_WIDTH + x) * 2] = '+';
+    video[((y + h - 1) * VGA_WIDTH + x) * 2 + 1] = color;
+    for (int i = 1; i < w - 1; i++) {
+        video[((y + h - 1) * VGA_WIDTH + x + i) * 2] = '-';
+        video[((y + h - 1) * VGA_WIDTH + x + i) * 2 + 1] = color;
+    }
+    video[((y + h - 1) * VGA_WIDTH + x + w - 1) * 2] = '+';
+    video[((y + h - 1) * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+
+    // Боковые границы
+    for (int j = 1; j < h - 1; j++) {
+        video[((y + j) * VGA_WIDTH + x) * 2] = '|';
+        video[((y + j) * VGA_WIDTH + x) * 2 + 1] = color;
+        video[((y + j) * VGA_WIDTH + x + w - 1) * 2] = '|';
+        video[((y + j) * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+    }
+}
+
+// ===== Пункт меню =====
+void draw_menu_item(volatile char *video, int y, const char *text, int selected) {
+    int x = (VGA_WIDTH - 11) / 2;
+    unsigned char c = selected ? 0x1F : 0x07;
+
+    // Подсветка выбранного — закрашиваем всю строку
+    if (selected) {
+        for (int i = 0; i < 11; i++) {
+            video[(y * VGA_WIDTH + x + i) * 2] = ' ';
+            video[(y * VGA_WIDTH + x + i) * 2 + 1] = c;
+        }
+    }
+
+    // Текст
+    int idx = (y * VGA_WIDTH + x) * 2;
+    for (int i = 0; text[i]; i++) {
+        video[idx + i * 2] = text[i];
+        video[idx + i * 2 + 1] = c;
+    }
+}
+
+// ===== Меню с рамкой =====
+void redraw_menu(volatile char *video, int selected) {
     // Очистка области меню
-    for (int y = 10; y <= 14; y++) {
+    for (int y = 9; y <= 17; y++) {
         for (int x = 0; x < VGA_WIDTH; x++) {
             video[(y * VGA_WIDTH + x) * 2] = ' ';
             video[(y * VGA_WIDTH + x) * 2 + 1] = 0x0F;
         }
     }
 
-    // ===== Пункт 1: "> AuraOS <" =====
-    int item1_x = (VGA_WIDTH - 11) / 2;
-    unsigned char c1 = (selected == 0) ? 0x1F : 0x07;
-    int mi = (menu_y * VGA_WIDTH + item1_x) * 2;
-    video[mi + 0]  = '>';  video[mi + 1]  = c1;
-    video[mi + 2]  = ' ';  video[mi + 3]  = c1;
-    video[mi + 4]  = 'A';  video[mi + 5]  = c1;
-    video[mi + 6]  = 'u';  video[mi + 7]  = c1;
-    video[mi + 8]  = 'r';  video[mi + 9]  = c1;
-    video[mi + 10] = 'a';  video[mi + 11] = c1;
-    video[mi + 12] = 'O';  video[mi + 13] = c1;
-    video[mi + 14] = 'S';  video[mi + 15] = c1;
-    video[mi + 16] = ' ';  video[mi + 17] = c1;
-    video[mi + 18] = '<';  video[mi + 19] = c1;
+    // ===== Рамка вокруг меню =====
+    int box_x = (VGA_WIDTH - 30) / 2;
+    int box_y = 10;
+    int box_w = 30;
+    int box_h = 6;
+    draw_box(video, box_x, box_y, box_w, box_h, 0x0B);  // голубая рамка
 
-    // ===== Пункт 2: "> Safe Mode <" =====
-    int item2_x = (VGA_WIDTH - 13) / 2;
-    unsigned char c2 = (selected == 1) ? 0x1F : 0x07;
-    int si = ((menu_y + 2) * VGA_WIDTH + item2_x) * 2;
-    video[si + 0]  = '>';  video[si + 1]  = c2;
-    video[si + 2]  = ' ';  video[si + 3]  = c2;
-    video[si + 4]  = 'S';  video[si + 5]  = c2;
-    video[si + 6]  = 'a';  video[si + 7]  = c2;
-    video[si + 8]  = 'f';  video[si + 9]  = c2;
-    video[si + 10] = 'e';  video[si + 11] = c2;
-    video[si + 12] = ' ';  video[si + 13] = c2;
-    video[si + 14] = 'M';  video[si + 15] = c2;
-    video[si + 16] = 'o';  video[si + 17] = c2;
-    video[si + 18] = 'd';  video[si + 19] = c2;
-    video[si + 20] = 'e';  video[si + 21] = c2;
-    video[si + 22] = ' ';  video[si + 23] = c2;
-    video[si + 24] = '<';  video[si + 25] = c2;
+    // ===== Пункт 1: AuraOS =====
+    draw_menu_item(video, box_y + 1, "   > AuraOS < ", selected == 0 ? 1 : 0);
+
+    // ===== Пункт 2: Safe Mode =====
+    draw_menu_item(video, box_y + 3, " > Safe Mode < ", selected == 1 ? 1 : 0);
 }
