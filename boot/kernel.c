@@ -9,7 +9,6 @@ void hide_cursor();
 unsigned char keyboard_read();
 void delay(int count);
 void clear_screen(volatile char *video);
-void draw_big_char(volatile char *video, int x, int y, char c, unsigned char color);
 void draw_logo_big(volatile char *video, int y, unsigned char color);
 void draw_box(volatile char *video, int x, int y, int w, int h, unsigned char color);
 void draw_menu_item(volatile char *video, int y, const char *text, int selected);
@@ -24,8 +23,8 @@ void kernel_main(void) {
     hide_cursor();
     clear_screen(video);
 
-    // ===== АНИМАЦИЯ: большой логотип снизу вверх =====
-    for (int y = VGA_HEIGHT - 2; y >= 2; y--) {
+    // ===== АНИМАЦИЯ: логотип снизу вверх =====
+    for (int y = VGA_HEIGHT - 1; y >= 2; y--) {
         clear_screen(video);
         draw_logo_big(video, y, 0x0D);  // ярко-фиолетовый
         delay(8000000);
@@ -106,33 +105,28 @@ void clear_screen(volatile char *video) {
     }
 }
 
-// ===== Большой символ (2×2 знакоместа) =====
-void draw_big_char(volatile char *video, int x, int y, char c, unsigned char color) {
-    int p1 = (y * VGA_WIDTH + x) * 2;
-    video[p1] = c;     video[p1 + 1] = color;
-    int p2 = (y * VGA_WIDTH + x + 1) * 2;
-    video[p2] = c;     video[p2 + 1] = color;
-    int p3 = ((y + 1) * VGA_WIDTH + x) * 2;
-    video[p3] = c;     video[p3 + 1] = color;
-    int p4 = ((y + 1) * VGA_WIDTH + x + 1) * 2;
-    video[p4] = c;     video[p4 + 1] = color;
-}
-
-// ===== Большой логотип "Aura Boot" =====
+// ===== Логотип "Aura Boot" псевдографикой =====
 void draw_logo_big(volatile char *video, int y, unsigned char color) {
-    // "Aura Boot" — 9 символов × 2 = 18
-    int total_w = 9 * 2;
+    const char *logo[5] = {
+        "  A   U   U RRRR   A   BBBB   OO   OO  TTTTT",
+        " A A  U   U R   R A A  B   B O  O O  O   T  ",
+        "AAAAA U   U RRRR  AAA  BBBB  O  O O  O   T  ",
+        "A   A U   U R R   A A  B   B O  O O  O   T  ",
+        "A   A  UUU  R  R  A   A BBBB  OO   OO    T  "
+    };
+
+    int total_w = 44;
     int x = (VGA_WIDTH - total_w) / 2;
 
-    draw_big_char(video, x + 0,  y, 'A', color);
-    draw_big_char(video, x + 2,  y, 'u', color);
-    draw_big_char(video, x + 4,  y, 'r', color);
-    draw_big_char(video, x + 6,  y, 'a', color);
-    draw_big_char(video, x + 8,  y, ' ', color);
-    draw_big_char(video, x + 10, y, 'B', color);
-    draw_big_char(video, x + 12, y, 'o', color);
-    draw_big_char(video, x + 14, y, 'o', color);
-    draw_big_char(video, x + 16, y, 't', color);
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; logo[row][col]; col++) {
+            if (logo[row][col] != ' ') {
+                int idx = ((y + row) * VGA_WIDTH + x + col) * 2;
+                video[idx] = logo[row][col];
+                video[idx + 1] = color;
+            }
+        }
+    }
 }
 
 // ===== Рамка вокруг меню =====
@@ -168,12 +162,12 @@ void draw_box(volatile char *video, int x, int y, int w, int h, unsigned char co
 
 // ===== Пункт меню =====
 void draw_menu_item(volatile char *video, int y, const char *text, int selected) {
-    int x = (VGA_WIDTH - 11) / 2;
+    int x = (VGA_WIDTH - 13) / 2;
     unsigned char c = selected ? 0x1F : 0x07;
 
-    // Подсветка выбранного — закрашиваем всю строку
+    // Подсветка выбранного
     if (selected) {
-        for (int i = 0; i < 11; i++) {
+        for (int i = 0; i < 13; i++) {
             video[(y * VGA_WIDTH + x + i) * 2] = ' ';
             video[(y * VGA_WIDTH + x + i) * 2 + 1] = c;
         }
@@ -202,7 +196,7 @@ void redraw_menu(volatile char *video, int selected) {
     int box_y = 10;
     int box_w = 30;
     int box_h = 6;
-    draw_box(video, box_x, box_y, box_w, box_h, 0x0B);  // голубая рамка
+    draw_box(video, box_x, box_y, box_w, box_h, 0x0B);
 
     // ===== Пункт 1: AuraOS =====
     draw_menu_item(video, box_y + 1, "   > AuraOS < ", selected == 0 ? 1 : 0);
