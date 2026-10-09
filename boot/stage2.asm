@@ -48,7 +48,7 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Вызов ядра на C (kernel_main — первый в .text)
+    ; Вызов ядра на C
     call 0x1000
 
     hlt
