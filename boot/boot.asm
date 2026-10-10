@@ -9,26 +9,38 @@ start:
     mov ss, ax
     mov sp, 0x7C00
 
-    ; Вывод "B"
+    mov [boot_drive], dl
+
     mov ah, 0x0E
     mov al, 'B'
     int 0x10
 
-    ; Читаем stage2 (сектор 2, 64 сектора) на 0x7E00
+    ; ===== Читаем stage2 (1 сектор) =====
+    mov dl, [boot_drive]
     mov ah, 0x02
-    mov al, 64
+    mov al, 1          ; ← было 64
     mov ch, 0
     mov cl, 2
     mov dh, 0
     mov bx, 0x7E00
     int 0x13
 
-    ; Вывод "S"
+    jc disk_error
+
     mov ah, 0x0E
     mov al, 'S'
     int 0x10
 
     jmp 0x7E00
+
+disk_error:
+    mov ah, 0x0E
+    mov al, 'E'
+    int 0x10
+    hlt
+    jmp $
+
+boot_drive: db 0
 
 times 510-($-$$) db 0
 dw 0xAA55

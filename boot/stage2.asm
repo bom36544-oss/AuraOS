@@ -4,38 +4,42 @@
 stage2:
     cli
 
-    ; Вывод "2"
     mov ah, 0x0E
     mov al, '2'
     int 0x10
 
-    ; Загружаем ядро (сектор 3, 100 секторов) на 0x1000
+    ; ===== Читаем stage3 (сектор 3, 1 сектор) на 0x8000 =====
     mov ah, 0x02
-    mov al, 100
+    mov al, 1          ; ← 1 сектор
     mov ch, 0
     mov cl, 3
     mov dh, 0
-    mov bx, 0x1000
+    mov bx, 0x8000
     int 0x13
 
-    ; Вывод "K"
+    ; ===== Читаем kernel64 (сектор 4, 1 сектор) на 0x1000 =====
+    mov ah, 0x02
+    mov al, 1          ; ← 1 сектор (было 100)
+    mov ch, 0
+    mov cl, 4
+    mov dh, 0
+    mov bx, 0x1000     ; ← 0x1000 (не 0x10000!)
+    int 0x13
+
     mov ah, 0x0E
     mov al, 'K'
     int 0x10
 
     lgdt [gdt_descriptor]
 
-    ; Вывод "G"
     mov ah, 0x0E
     mov al, 'G'
     int 0x10
 
-    ; Включаем protected mode
     mov eax, cr0
     or eax, 0x1
     mov cr0, eax
 
-    ; Переход
     jmp 0x08:protected_mode
 
 [bits 32]
@@ -48,8 +52,7 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Вызов ядра на C
-    call 0x1000
+    call 0x8000
 
     hlt
     jmp $
