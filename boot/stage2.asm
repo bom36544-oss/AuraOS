@@ -10,20 +10,20 @@ stage2:
 
     ; ===== Читаем stage3 (сектор 3, 1 сектор) на 0x8000 =====
     mov ah, 0x02
-    mov al, 1          ; ← 1 сектор
+    mov al, 1
     mov ch, 0
     mov cl, 3
     mov dh, 0
     mov bx, 0x8000
     int 0x13
 
-    ; ===== Читаем kernel64 (сектор 4, 1 сектор) на 0x1000 =====
+    ; ===== Читаем kernel64 (сектор 4, 8 секторов) на 0x1000 =====
     mov ah, 0x02
-    mov al, 1          ; ← 1 сектор (было 100)
+    mov al, 8          ; ← 8 секторов (4 КБ)
     mov ch, 0
     mov cl, 4
     mov dh, 0
-    mov bx, 0x1000     ; ← 0x1000 (не 0x10000!)
+    mov bx, 0x1000
     int 0x13
 
     mov ah, 0x0E

@@ -1,16 +1,203 @@
-// ===== 64-bit minimal kernel =====
+// ===== 64-bit AuraOS kernel =====
 #define VGA_ADDRESS 0xB8000
+#define VGA_WIDTH  80
+#define VGA_HEIGHT 25
 
+// ===== Типы (64-бит) =====
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+typedef unsigned long long u64;
+
+// ===== Прототипы =====
+u8 inb(u16 port);
+void outb(u16 port, u8 value);
+void hide_cursor();
+u8 keyboard_read();
+void delay(u64 count);
+void clear_screen(volatile char *video);
+void draw_logo_big(volatile char *video, int y, u8 color);
+void draw_box(volatile char *video, int x, int y, int w, int h, u8 color);
+void draw_menu_item(volatile char *video, int y, const char *text, int selected);
+void redraw_menu(volatile char *video, int selected);
+
+// ============================================
+// kernel_main64 — ПЕРВАЯ функция!
+// ============================================
 void kernel_main64(void) {
     volatile char *video = (volatile char*) VGA_ADDRESS;
 
-    // "K64" в VGA (жёлтый)
-    video[182] = 'K';
-    video[183] = 0x0E;
-    video[184] = '6';
-    video[185] = 0x0E;
-    video[186] = '4';
-    video[187] = 0x0E;
+    hide_cursor();
+    clear_screen(video);
 
-    while (1);
+    // ===== АНИМАЦИЯ: логотип снизу вверх =====
+    for (int y = VGA_HEIGHT - 1; y >= 2; y--) {
+        clear_screen(video);
+        draw_logo_big(video, y, 0x0D);  // ярко-фиолетовый
+        delay(8000000);
+    }
+
+    // Пауза
+    delay(10000000);
+    clear_screen(video);
+    draw_logo_big(video, 2, 0x0D);
+
+    // Меню
+    redraw_menu(video, 0);
+
+    // ===== Цикл клавиатуры =====
+    int selected = 0;
+    while (1) {
+        u8 sc = keyboard_read();
+
+        if (sc == 0x48) {        // вверх
+            if (selected != 0) {
+                selected = 0;
+                redraw_menu(video, selected);
+            }
+        } else if (sc == 0x50) { // вниз
+            if (selected != 1) {
+                selected = 1;
+                redraw_menu(video, selected);
+            }
+        } else if (sc == 0x1C) { // Enter
+            clear_screen(video);
+            const char *msg = (selected == 0) ? "Booting AuraOS..." : "Safe Mode activated";
+            int len = (selected == 0) ? 18 : 19;
+            int x = (VGA_WIDTH - len) / 2;
+            int y = VGA_HEIGHT / 2;
+            int idx = (y * VGA_WIDTH + x) * 2;
+            u8 color = (selected == 0) ? 0x0A : 0x0E;
+            for (int i = 0; i < len; i++) {
+                video[idx + i * 2] = msg[i];
+                video[idx + i * 2 + 1] = color;
+            }
+            while (1);
+        }
+    }
+}
+
+// ============================================
+// Вспомогательные
+// ============================================
+
+u8 inb(u16 port) {
+    u8 result;
+    __asm__ volatile ("inb %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
+}
+
+void outb(u16 port, u8 value) {
+    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+void hide_cursor() {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x20);
+}
+
+u8 keyboard_read() {
+    while (!(inb(0x64) & 1));
+    return inb(0x60);
+}
+
+void delay(u64 count) {
+    for (volatile u64 i = 0; i < count; i++);
+}
+
+void clear_screen(volatile char *video) {
+    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT * 2; i += 2) {
+        video[i] = ' ';
+        video[i + 1] = 0x0F;
+    }
+}
+
+// ===== Логотип "Aura Boot" псевдографикой =====
+void draw_logo_big(volatile char *video, int y, u8 color) {
+    const char *logo[5] = {
+        "  A   U   U RRRR   A   BBBB   OO   OO  TTTTT",
+        " A A  U   U R   R A A  B   B O  O O  O   T  ",
+        "AAAAA U   U RRRR  AAA  BBBB  O  O O  O   T  ",
+        "A   A U   U R R   A A  B   B O  O O  O   T  ",
+        "A   A  UUU  R  R  A   A BBBB  OO   OO    T  "
+    };
+
+    int total_w = 44;
+    int x = (VGA_WIDTH - total_w) / 2;
+
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; logo[row][col]; col++) {
+            if (logo[row][col] != ' ') {
+                int idx = ((y + row) * VGA_WIDTH + x + col) * 2;
+                video[idx] = logo[row][col];
+                video[idx + 1] = color;
+            }
+        }
+    }
+}
+
+// ===== Рамка =====
+void draw_box(volatile char *video, int x, int y, int w, int h, u8 color) {
+    video[(y * VGA_WIDTH + x) * 2] = '+';
+    video[(y * VGA_WIDTH + x) * 2 + 1] = color;
+    for (int i = 1; i < w - 1; i++) {
+        video[(y * VGA_WIDTH + x + i) * 2] = '-';
+        video[(y * VGA_WIDTH + x + i) * 2 + 1] = color;
+    }
+    video[(y * VGA_WIDTH + x + w - 1) * 2] = '+';
+    video[(y * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+
+    video[((y + h - 1) * VGA_WIDTH + x) * 2] = '+';
+    video[((y + h - 1) * VGA_WIDTH + x) * 2 + 1] = color;
+    for (int i = 1; i < w - 1; i++) {
+        video[((y + h - 1) * VGA_WIDTH + x + i) * 2] = '-';
+        video[((y + h - 1) * VGA_WIDTH + x + i) * 2 + 1] = color;
+    }
+    video[((y + h - 1) * VGA_WIDTH + x + w - 1) * 2] = '+';
+    video[((y + h - 1) * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+
+    for (int j = 1; j < h - 1; j++) {
+        video[((y + j) * VGA_WIDTH + x) * 2] = '|';
+        video[((y + j) * VGA_WIDTH + x) * 2 + 1] = color;
+        video[((y + j) * VGA_WIDTH + x + w - 1) * 2] = '|';
+        video[((y + j) * VGA_WIDTH + x + w - 1) * 2 + 1] = color;
+    }
+}
+
+// ===== Пункт меню =====
+void draw_menu_item(volatile char *video, int y, const char *text, int selected) {
+    int x = (VGA_WIDTH - 13) / 2;
+    u8 c = selected ? 0x1F : 0x07;
+
+    if (selected) {
+        for (int i = 0; i < 13; i++) {
+            video[(y * VGA_WIDTH + x + i) * 2] = ' ';
+            video[(y * VGA_WIDTH + x + i) * 2 + 1] = c;
+        }
+    }
+
+    int idx = (y * VGA_WIDTH + x) * 2;
+    for (int i = 0; text[i]; i++) {
+        video[idx + i * 2] = text[i];
+        video[idx + i * 2 + 1] = c;
+    }
+}
+
+// ===== Меню =====
+void redraw_menu(volatile char *video, int selected) {
+    for (int y = 9; y <= 17; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            video[(y * VGA_WIDTH + x) * 2] = ' ';
+            video[(y * VGA_WIDTH + x) * 2 + 1] = 0x0F;
+        }
+    }
+
+    int box_x = (VGA_WIDTH - 30) / 2;
+    int box_y = 10;
+    int box_w = 30;
+    int box_h = 6;
+    draw_box(video, box_x, box_y, box_w, box_h, 0x0B);
+
+    draw_menu_item(video, box_y + 1, "   > AuraOS < ", selected == 0 ? 1 : 0);
+    draw_menu_item(video, box_y + 3, " > Safe Mode < ", selected == 1 ? 1 : 0);
 }
