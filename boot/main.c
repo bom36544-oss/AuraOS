@@ -1,4 +1,4 @@
-// ===== AuraOS UEFI GOP Test =====
+// ===== AuraOS UEFI Loader — передача управления ядру =====
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;
@@ -30,12 +30,6 @@ typedef struct {
 } EFI_SYSTEM_TABLE;
 
 typedef struct {
-    void *Reset;
-    EFI_STATUS (*OutputString)(void *This, CHAR16 *String);
-} EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
-
-// EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE
-typedef struct {
     UINT32 MaxMode;
     UINT32 Mode;
     void *Info;
@@ -44,7 +38,6 @@ typedef struct {
     UINTN FrameBufferSize;
 } EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE;
 
-// EFI_GRAPHICS_OUTPUT_PROTOCOL
 typedef struct {
     void *QueryMode;
     void *SetMode;
@@ -57,92 +50,57 @@ static EFI_GUID gop_guid = {
     {0x96, 0xFB, 0x7A, 0xDE, 0xD0, 0x80, 0x51, 0x6A}
 };
 
-void print(EFI_SYSTEM_TABLE *ST, CHAR16 *str) {
-    EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *conout = 
-        (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *)ST->ConOut;
-    conout->OutputString(conout, str);
-}
+// ===== Глобальные переменные — передаются ядру =====
+UINT32 *g_fb = 0;
+UINT32 g_width = 0;
+UINT32 g_height = 0;
+UINT32 g_pitch = 0;
+void *g_conin = 0;
 
+// ===== Kernel =====
+extern void kernel_main64(void);
+
+// ===== Точка входа =====
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
     (void)ImageHandle;
     
-    print(ST, L"AuraOS UEFI GOP Test\r\n");
-    print(ST, L"Locating GOP...\r\n");
-    
-    // BootServices — это указатель на структуру
+    // BootServices
     char *BS = (char *)ST->BootServices;
-    
-    // Смещение LocateProtocol = 24 (Hdr) + 37*8 = 24 + 296 = 320 = 0x140
-    // Всего функций до LocateProtocol: 37 (указателей)
-    // Hdr = 24 байта
-    // Функции:
-    // 0x18 RaiseTPL
-    // 0x20 RestoreTPL
-    // 0x28 AllocatePages
-    // 0x30 FreePages
-    // 0x38 GetMemoryMap
-    // 0x40 AllocatePool
-    // 0x48 FreePool
-    // 0x50 CreateEvent
-    // 0x58 SetTimer
-    // 0x60 WaitForEvent
-    // 0x68 SignalEvent
-    // 0x70 CloseEvent
-    // 0x78 CheckEvent
-    // 0x80 InstallProtocolInterface
-    // 0x88 ReinstallProtocolInterface
-    // 0x90 UninstallProtocolInterface
-    // 0x98 HandleProtocol
-    // 0xA0 Reserved
-    // 0xA8 RegisterProtocolNotify
-    // 0xB0 LocateHandle
-    // 0xB8 LocateDevicePath
-    // 0xC0 InstallConfigurationTable
-    // 0xC8 LoadImage
-    // 0xD0 StartImage
-    // 0xD8 Exit
-    // 0xE0 UnloadImage
-    // 0xE8 ExitBootServices
-    // 0xF0 GetNextMonotonicCount
-    // 0xF8 Stall
-    // 0x100 SetWatchdogTimer
-    // 0x108 ConnectController
-    // 0x110 DisconnectController
-    // 0x118 OpenProtocol
-    // 0x120 CloseProtocol
-    // 0x128 OpenProtocolInformation
-    // 0x130 ProtocolsPerHandle
-    // 0x138 LocateHandleBuffer
-    // 0x140 LocateProtocol ← здесь!
-    
     typedef EFI_STATUS (*LocateProtocol_t)(EFI_GUID*, void*, void**);
     LocateProtocol_t LocateProtocol = (LocateProtocol_t)*(void**)(BS + 0x140);
     
-    print(ST, L"Calling LocateProtocol...\r\n");
-    
+    // GOP
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = 0;
     EFI_STATUS status = LocateProtocol(&gop_guid, 0, (void**)&gop);
     
-    print(ST, L"Returned from LocateProtocol\r\n");
-    
     if (status != 0 || gop == 0) {
-        print(ST, L"GOP not found!\r\n");
         while (1) { __asm__ volatile ("hlt"); }
     }
     
-    print(ST, L"GOP found!\r\n");
-    
     // Framebuffer
-    UINT64 fb_base = gop->Mode->FrameBufferBase;
-    UINT32 *fb = (UINT32 *)(UINTN)fb_base;
+    g_fb = (UINT32 *)(UINTN)gop->Mode->FrameBufferBase;
     
-    // Залить 640x480 ярко-фиолетовым
-    for (UINTN i = 0; i < 640 * 480; i++) {
-        fb[i] = 0x00FF00FF;
-    }
+    typedef struct {
+        UINT32 Version;
+        UINT32 HorizontalResolution;
+        UINT32 VerticalResolution;
+        UINT32 PixelFormat;
+        UINT32 PixelInformation[4];
+        UINT32 PixelsPerScanLine;
+    } GOP_MODE_INFO;
     
-    print(ST, L"Screen filled!\r\n");
+    GOP_MODE_INFO *info = (GOP_MODE_INFO *)gop->Mode->Info;
+    g_width  = info->HorizontalResolution;
+    g_height = info->VerticalResolution;
+    g_pitch  = info->PixelsPerScanLine;
     
+    // Передаём ConIn ядру
+    g_conin = ST->ConIn;
+    
+    // Вызов ядра
+    kernel_main64();
+    
+    // Если вернулось — зависаем
     while (1) { __asm__ volatile ("hlt"); }
     
     return 0;
