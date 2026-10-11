@@ -1,4 +1,4 @@
-// ===== AuraOS UEFI Loader — загрузка kernel64.elf =====
+// ===== AuraOS UEFI Loader =====
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;
@@ -50,15 +50,42 @@ static EFI_GUID gop_guid = {
     {0x96, 0xFB, 0x7A, 0xDE, 0xD0, 0x80, 0x51, 0x6A}
 };
 
-// ===== Глобальные переменные (передаются ядру) =====
+// ===== memcpy / memset (компилятор иногда вставляет вызовы) =====
+void *memcpy(void *dest, const void *src, unsigned long long n) {
+    char *d = (char *)dest;
+    const char *s = (const char *)src;
+    for (unsigned long long i = 0; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+void *memset(void *dest, int c, unsigned long long n) {
+    char *d = (char *)dest;
+    for (unsigned long long i = 0; i < n; i++) {
+        d[i] = (char)c;
+    }
+    return dest;
+}
+
+// ===== Глобальные переменные =====
 UINT32 *g_fb = 0;
 UINT32 g_width = 0;
 UINT32 g_height = 0;
 UINT32 g_pitch = 0;
 void *g_conin = 0;
 
-// ===== Kernel — внешняя точка входа =====
-extern void kernel_main64(void);
+// ===== Мышь (пока в центре) =====
+int g_mouse_x = 200;
+int g_mouse_y = 200;
+
+// ===== Форс линковки =====
+extern void kernel_main(void);
+extern void gui_main(void);
+extern void gui_handle_up(void);
+extern void gui_handle_down(void);
+extern void gui_handle_enter(void);
+extern void gui_handle_esc(void);
 
 // ===== Точка входа UEFI =====
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
@@ -94,8 +121,19 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
     
     g_conin = ST->ConIn;
     
-    // Вызов ядра (пока — напрямую, потом — с загрузкой ELF)
-    kernel_main64();
+    // Форс линковки
+    volatile void *force[] = {
+        (void*)&kernel_main,
+        (void*)&gui_main,
+        (void*)&gui_handle_up,
+        (void*)&gui_handle_down,
+        (void*)&gui_handle_enter,
+        (void*)&gui_handle_esc
+    };
+    (void)force;
+    
+    // Вызов ядра
+    kernel_main();
     
     while (1) { __asm__ volatile ("hlt"); }
     

@@ -1,0 +1,201 @@
+// ===== AuraOS — ядро (boot + меню) =====
+
+#include "kernel.h"
+#include "../AuraGUI/gui.h"
+#include "../AuraGUI/graphics.h"
+
+typedef unsigned short CHAR16;
+typedef unsigned long long EFI_STATUS;
+typedef unsigned int UINT32;
+typedef unsigned long long UINTN;
+
+// ===== Внешние переменные =====
+extern void *g_conin;
+
+// ===== EFI_INPUT_KEY =====
+typedef struct {
+    unsigned short ScanCode;
+    CHAR16 UnicodeChar;
+} EFI_INPUT_KEY;
+
+typedef struct {
+    void *Reset;
+    EFI_STATUS (*ReadKeyStroke)(void *This, EFI_INPUT_KEY *Key);
+    void *WaitForKey;
+} EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
+
+// ===== Цвета =====
+#define COLOR_BLACK 0x00000000
+#define COLOR_WHITE 0x00FFFFFF
+
+// ===== Delay =====
+void delay(UINTN count) {
+    for (volatile UINTN i = 0; i < count; i++);
+}
+
+// ===== Логотип =====
+static void draw_logo(UINT32 x, UINT32 y, UINT32 scale, UINT32 color) {
+    UINT32 step = 6 * scale;
+    gfx_draw_char(x + 0 * step, y, font_A, scale, color);
+    gfx_draw_char(x + 1 * step, y, font_u, scale, color);
+    gfx_draw_char(x + 2 * step, y, font_r, scale, color);
+    gfx_draw_char(x + 3 * step, y, font_a, scale, color);
+    gfx_draw_char(x + 4 * step, y, font_space, scale, color);
+    gfx_draw_char(x + 5 * step, y, font_B, scale, color);
+    gfx_draw_char(x + 6 * step, y, font_o, scale, color);
+    gfx_draw_char(x + 7 * step, y, font_o, scale, color);
+    gfx_draw_char(x + 8 * step, y, font_t, scale, color);
+}
+
+// ===== Меню =====
+static int g_selected = 0;
+
+static void draw_menu(UINT32 scale) {
+    UINT32 step = 6 * scale;
+    UINT32 line_h = 10 * scale;
+    UINT32 start_y = g_height / 2;
+    UINT32 start_x = g_width / 3;
+    
+    gfx_fill_rect(start_x - 4*scale, start_y - 4*scale, 
+                  g_width/2 + 8*scale, line_h * 2 + 12*scale, COLOR_BLACK);
+    
+    // AuraOS
+    if (g_selected == 0) {
+        gfx_fill_rect(start_x - 2*scale, start_y - 2*scale, 
+                      g_width/2 + 4*scale, line_h, COLOR_WHITE);
+        gfx_draw_char(start_x, start_y, font_A, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + step, start_y, font_u, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 2*step, start_y, font_r, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 3*step, start_y, font_a, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 4*step, start_y, font_O, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 5*step, start_y, font_S, scale, COLOR_BLACK);
+    } else {
+        gfx_draw_char(start_x, start_y, font_A, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + step, start_y, font_u, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 2*step, start_y, font_r, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 3*step, start_y, font_a, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 4*step, start_y, font_O, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 5*step, start_y, font_S, scale, COLOR_WHITE);
+    }
+    
+    // Safe Mode
+    if (g_selected == 1) {
+        gfx_fill_rect(start_x - 2*scale, start_y + line_h - 2*scale, 
+                      g_width/2 + 4*scale, line_h, COLOR_WHITE);
+        gfx_draw_char(start_x, start_y + line_h, font_S, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + step, start_y + line_h, font_a, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 2*step, start_y + line_h, font_f, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 3*step, start_y + line_h, font_e, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 4*step, start_y + line_h, font_space, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 5*step, start_y + line_h, font_M, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 6*step, start_y + line_h, font_o, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 7*step, start_y + line_h, font_d, scale, COLOR_BLACK);
+        gfx_draw_char(start_x + 8*step, start_y + line_h, font_e, scale, COLOR_BLACK);
+    } else {
+        gfx_draw_char(start_x, start_y + line_h, font_S, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + step, start_y + line_h, font_a, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 2*step, start_y + line_h, font_f, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 3*step, start_y + line_h, font_e, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 4*step, start_y + line_h, font_space, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 5*step, start_y + line_h, font_M, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 6*step, start_y + line_h, font_o, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 7*step, start_y + line_h, font_d, scale, COLOR_WHITE);
+        gfx_draw_char(start_x + 8*step, start_y + line_h, font_e, scale, COLOR_WHITE);
+    }
+}
+
+static void draw_booting(void) {
+    UINT32 scale = 4;
+    UINT32 step = 6 * scale;
+    
+    gfx_clear_screen(COLOR_BLACK);
+    
+    UINT32 msg_x = (g_width - 7 * step) / 2;
+    UINT32 msg_y = g_height / 2 - 4 * scale;
+    
+    gfx_draw_char(msg_x + 0 * step, msg_y, font_B, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 1 * step, msg_y, font_o, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 2 * step, msg_y, font_o, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 3 * step, msg_y, font_t, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 4 * step, msg_y, font_i, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 5 * step, msg_y, font_n, scale, COLOR_WHITE);
+    gfx_draw_char(msg_x + 6 * step, msg_y, font_g, scale, COLOR_WHITE);
+    
+    UINT32 dot_y = msg_y + 9 * scale;
+    UINT32 dot_x = (g_width - 5 * scale) / 2;
+    gfx_fill_rect(dot_x + 0 * scale, dot_y, scale, scale, COLOR_WHITE);
+    gfx_fill_rect(dot_x + 2 * scale, dot_y, scale, scale, COLOR_WHITE);
+    gfx_fill_rect(dot_x + 4 * scale, dot_y, scale, scale, COLOR_WHITE);
+}
+
+// ===== Точка входа ядра =====
+void kernel_main(void) {
+    UINT32 scale = 4;
+    UINT32 logo_w = 9 * 6 * scale;
+    UINT32 logo_h = 7 * scale;
+    UINT32 start_x = (g_width - logo_w) / 2;
+    UINT32 final_y = 150;
+    
+    gfx_clear_screen(COLOR_BLACK);
+    
+    // Анимация 5 сек
+    UINT32 total_frames = 50;
+    UINT32 y_start = g_height - logo_h;
+    UINT32 delta = (y_start - final_y) / total_frames;
+    if (delta < 1) delta = 1;
+    
+    UINT32 prev_y = y_start;
+    draw_logo(start_x, y_start, scale, COLOR_WHITE);
+    delay(3000000);
+    
+    for (UINT32 i = 1; i < total_frames; i++) {
+        UINT32 y = y_start - i * delta;
+        if (y <= final_y || i == total_frames - 1) y = final_y;
+        
+        gfx_fill_rect(start_x, prev_y, logo_w, logo_h, COLOR_BLACK);
+        draw_logo(start_x, y, scale, COLOR_WHITE);
+        
+        prev_y = y;
+        delay(3000000);
+        
+        if (y == final_y) break;
+    }
+    
+    draw_logo(start_x, final_y, scale, COLOR_WHITE);
+    draw_menu(scale);
+    
+    // ===== Ввод клавиш =====
+    EFI_SIMPLE_TEXT_INPUT_PROTOCOL *conin = 
+        (EFI_SIMPLE_TEXT_INPUT_PROTOCOL *)g_conin;
+    
+    int in_gui = 0;
+    
+    while (1) {
+        EFI_INPUT_KEY key;
+        EFI_STATUS st = conin->ReadKeyStroke(conin, &key);
+        
+        if (st == 0) {
+            if (!in_gui) {
+                if (key.ScanCode == 0x01) {
+                    if (g_selected != 0) { g_selected = 0; draw_menu(scale); }
+                }
+                else if (key.ScanCode == 0x02) {
+                    if (g_selected != 1) { g_selected = 1; draw_menu(scale); }
+                }
+                else if (key.UnicodeChar == 0x0D) {
+                    draw_booting();
+                    delay(100000000);
+                    gui_main();
+                    in_gui = 1;
+                }
+            } else {
+                if (key.ScanCode == 0x01) gui_handle_up();
+                else if (key.ScanCode == 0x02) gui_handle_down();
+                else if (key.UnicodeChar == 0x0D) gui_handle_enter();
+                else if (key.ScanCode == 0x17) gui_handle_esc();
+            }
+        }
+        
+        delay(100000);
+    }
+}

@@ -1,4 +1,6 @@
-// ===== AuraOS 64-bit Kernel — анимация + меню + стрелки + Enter =====
+// ===== AuraOS 64-bit Kernel — Boot + AuraGUI =====
+
+#include "../AuraGUI/gui.h"
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;
@@ -45,25 +47,6 @@ void clear_screen(UINT32 color) {
         }
     }
 }
-
-// ===== Шрифт 5x7 =====
-const unsigned char font_A[7]  = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-const unsigned char font_u[7]  = {0x00, 0x00, 0x11, 0x11, 0x11, 0x13, 0x0D};
-const unsigned char font_r[7]  = {0x00, 0x00, 0x16, 0x19, 0x10, 0x10, 0x10};
-const unsigned char font_a[7]  = {0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F, 0x00};
-const unsigned char font_B[7]  = {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E};
-const unsigned char font_o[7]  = {0x00, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E};
-const unsigned char font_t[7]  = {0x08, 0x08, 0x1C, 0x08, 0x08, 0x09, 0x06};
-const unsigned char font_S[7]  = {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E};
-const unsigned char font_f[7]  = {0x06, 0x09, 0x08, 0x1C, 0x08, 0x08, 0x08};
-const unsigned char font_e[7]  = {0x00, 0x0E, 0x11, 0x1F, 0x10, 0x0E, 0x00};
-const unsigned char font_M[7]  = {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11};
-const unsigned char font_d[7]  = {0x01, 0x01, 0x0F, 0x11, 0x11, 0x0F, 0x00};
-const unsigned char font_O[7]  = {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
-const unsigned char font_i[7]  = {0x00, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
-const unsigned char font_n[7]  = {0x00, 0x00, 0x16, 0x19, 0x11, 0x11, 0x11};
-const unsigned char font_g[7]  = {0x00, 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x0E};
-const unsigned char font_space[7] = {0,0,0,0,0,0,0};
 
 void draw_char(UINT32 x, UINT32 y, const unsigned char *font, UINT32 scale, UINT32 color) {
     for (UINT32 row = 0; row < 7; row++) {
@@ -147,7 +130,6 @@ void draw_menu(UINT32 scale) {
     }
 }
 
-// ===== Экран Booting =====
 void draw_booting(void) {
     UINT32 WHITE = 0x00FFFFFF;
     UINT32 BLACK = 0x00000000;
@@ -199,7 +181,6 @@ void kernel_main64(void) {
     if (delta < 1) delta = 1;
     
     UINT32 prev_y = y_start;
-    
     draw_logo(start_x, y_start, scale, WHITE);
     delay(3000000);
     
@@ -217,37 +198,55 @@ void kernel_main64(void) {
     }
     
     draw_logo(start_x, final_y, scale, WHITE);
-    
-    // ===== Меню =====
     draw_menu(scale);
     
     // ===== Ввод клавиш =====
     EFI_SIMPLE_TEXT_INPUT_PROTOCOL *conin = 
         (EFI_SIMPLE_TEXT_INPUT_PROTOCOL *)g_conin;
     
+    int in_gui = 0;  // 0 = меню, 1 = AuraGUI
+    
     while (1) {
         EFI_INPUT_KEY key;
         EFI_STATUS st = conin->ReadKeyStroke(conin, &key);
         
         if (st == 0) {
-            // Стрелка вверх — ScanCode 0x01
-            if (key.ScanCode == 0x01) {
-                if (g_selected != 0) {
-                    g_selected = 0;
-                    draw_menu(scale);
+            if (!in_gui) {
+                // ===== Меню загрузки =====
+                if (key.ScanCode == 0x01) {        // стрелка вверх
+                    if (g_selected != 0) {
+                        g_selected = 0;
+                        draw_menu(scale);
+                    }
                 }
-            }
-            // Стрелка вниз — ScanCode 0x02
-            else if (key.ScanCode == 0x02) {
-                if (g_selected != 1) {
-                    g_selected = 1;
-                    draw_menu(scale);
+                else if (key.ScanCode == 0x02) {   // стрелка вниз
+                    if (g_selected != 1) {
+                        g_selected = 1;
+                        draw_menu(scale);
+                    }
                 }
-            }
-            // Enter — UnicodeChar 0x0D
-            else if (key.UnicodeChar == 0x0D) {
-                draw_booting();
-                while (1) { __asm__ volatile ("hlt"); }
+                else if (key.UnicodeChar == 0x0D) { // Enter
+                    draw_booting();
+                    delay(100000000);  // 2 сек
+                    
+                    // ===== AuraGUI =====
+                    gui_main();
+                    in_gui = 1;
+                }
+            } else {
+                // ===== AuraGUI =====
+                if (key.ScanCode == 0x01) {        // стрелка вверх
+                    gui_handle_up();
+                }
+                else if (key.ScanCode == 0x02) {   // стрелка вниз
+                    gui_handle_down();
+                }
+                else if (key.UnicodeChar == 0x0D) { // Enter
+                    gui_handle_enter();
+                }
+                else if (key.ScanCode == 0x17) {   // Esc
+                    gui_handle_esc();
+                }
             }
         }
         
