@@ -29,12 +29,19 @@ void print(EFI_SYSTEM_TABLE *ST, CHAR16 *str) {
 
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
     (void)ImageHandle;
-
     print(ST, L"AuraOS UEFI Loader\r\n");
-    print(ST, L"Hello, UEFI!\r\n");
+    print(ST, L"Loading kernel...\r\n");
     print(ST, L"\r\n");
-    print(ST, L"Press any key...\r\n");
 
+    // Передаём ConOut ядру
+    extern void *g_conout;
+    g_conout = ST->ConOut;
+
+    // Вызов ядра
+    extern void kernel_main64(void);
+    kernel_main64();
+
+    // Если ядро вернётся — зависаем
     while (1) {
         __asm__ volatile ("hlt");
     }
