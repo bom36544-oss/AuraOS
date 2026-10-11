@@ -1,7 +1,6 @@
 #ifndef GUI_H
 #define GUI_H
 
-// ===== Внешние переменные =====
 typedef unsigned int UINT32;
 typedef unsigned long long UINTN;
 
@@ -12,7 +11,6 @@ extern UINT32 g_pitch;
 extern int g_mouse_x;
 extern int g_mouse_y;
 
-// ===== AuraGUI API =====
 void gui_main(void);
 void gui_draw_desktop(void);
 void gui_draw_window(void);
@@ -21,7 +19,10 @@ void gui_handle_down(void);
 void gui_handle_enter(void);
 void gui_handle_esc(void);
 
-// ===== Шрифты (из font.c) =====
+void gui_save_under_cursor(void);
+void gui_restore_under_cursor(void);
+void gui_draw_cursor(void);
+
 extern const unsigned char font_A[7];
 extern const unsigned char font_u[7];
 extern const unsigned char font_r[7];
