@@ -1,4 +1,4 @@
-// ===== AuraOS UEFI Loader — передача управления ядру =====
+// ===== AuraOS UEFI Loader — загрузка kernel64.elf =====
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;
@@ -50,21 +50,20 @@ static EFI_GUID gop_guid = {
     {0x96, 0xFB, 0x7A, 0xDE, 0xD0, 0x80, 0x51, 0x6A}
 };
 
-// ===== Глобальные переменные — передаются ядру =====
+// ===== Глобальные переменные (передаются ядру) =====
 UINT32 *g_fb = 0;
 UINT32 g_width = 0;
 UINT32 g_height = 0;
 UINT32 g_pitch = 0;
 void *g_conin = 0;
 
-// ===== Kernel =====
+// ===== Kernel — внешняя точка входа =====
 extern void kernel_main64(void);
 
-// ===== Точка входа =====
+// ===== Точка входа UEFI =====
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
     (void)ImageHandle;
     
-    // BootServices
     char *BS = (char *)ST->BootServices;
     typedef EFI_STATUS (*LocateProtocol_t)(EFI_GUID*, void*, void**);
     LocateProtocol_t LocateProtocol = (LocateProtocol_t)*(void**)(BS + 0x140);
@@ -77,7 +76,6 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
         while (1) { __asm__ volatile ("hlt"); }
     }
     
-    // Framebuffer
     g_fb = (UINT32 *)(UINTN)gop->Mode->FrameBufferBase;
     
     typedef struct {
@@ -94,13 +92,11 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *ST) {
     g_height = info->VerticalResolution;
     g_pitch  = info->PixelsPerScanLine;
     
-    // Передаём ConIn ядру
     g_conin = ST->ConIn;
     
-    // Вызов ядра
+    // Вызов ядра (пока — напрямую, потом — с загрузкой ELF)
     kernel_main64();
     
-    // Если вернулось — зависаем
     while (1) { __asm__ volatile ("hlt"); }
     
     return 0;

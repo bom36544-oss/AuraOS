@@ -1,11 +1,11 @@
-// ===== AuraOS 64-bit Kernel — анимация + меню + Booting =====
+// ===== AuraOS 64-bit Kernel — анимация + меню + стрелки + Enter =====
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;
 typedef unsigned int UINT32;
 typedef unsigned long long UINTN;
 
-// ===== Внешние переменные (из main.c) =====
+// ===== Внешние переменные (определены в main.c) =====
 extern UINT32 *g_fb;
 extern UINT32 g_width;
 extern UINT32 g_height;
@@ -99,11 +99,10 @@ void draw_menu(UINT32 scale) {
     UINT32 start_y = g_height / 2;
     UINT32 start_x = g_width / 3;
     
-    // Очистка области меню
     fill_rect(start_x - 4*scale, start_y - 4*scale, 
               g_width/2 + 8*scale, line_h * 2 + 12*scale, BLACK);
     
-    // ===== Пункт 1: AuraOS =====
+    // AuraOS
     if (g_selected == 0) {
         fill_rect(start_x - 2*scale, start_y - 2*scale, 
                   g_width/2 + 4*scale, line_h, WHITE);
@@ -122,7 +121,7 @@ void draw_menu(UINT32 scale) {
         draw_char(start_x + 5*step, start_y, font_S, scale, WHITE);
     }
     
-    // ===== Пункт 2: Safe Mode =====
+    // Safe Mode
     if (g_selected == 1) {
         fill_rect(start_x - 2*scale, start_y + line_h - 2*scale, 
                   g_width/2 + 4*scale, line_h, WHITE);
@@ -148,7 +147,7 @@ void draw_menu(UINT32 scale) {
     }
 }
 
-// ===== Экран загрузки =====
+// ===== Экран Booting =====
 void draw_booting(void) {
     UINT32 WHITE = 0x00FFFFFF;
     UINT32 BLACK = 0x00000000;
@@ -157,7 +156,6 @@ void draw_booting(void) {
     
     clear_screen(BLACK);
     
-    // Центр "Booting"
     UINT32 msg_w = 7 * step;
     UINT32 msg_x = (g_width - msg_w) / 2;
     UINT32 msg_y = g_height / 2 - 4 * scale;
@@ -170,7 +168,6 @@ void draw_booting(void) {
     draw_char(msg_x + 5 * step, msg_y, font_n, scale, WHITE);
     draw_char(msg_x + 6 * step, msg_y, font_g, scale, WHITE);
     
-    // Три точки внизу
     UINT32 dot_y = msg_y + 9 * scale;
     UINT32 dot_x = (g_width - 5 * scale) / 2;
     fill_rect(dot_x + 0 * scale, dot_y, scale, scale, WHITE);
@@ -188,24 +185,40 @@ void kernel_main64(void) {
     UINT32 WHITE = 0x00FFFFFF;
     UINT32 scale = 4;
     
-    // Очистка
+    UINT32 logo_w = 9 * 6 * scale;
+    UINT32 logo_h = 7 * scale;
+    UINT32 start_x = (g_width - logo_w) / 2;
+    UINT32 final_y = 150;
+    
     clear_screen(BLACK);
     
-    // Анимация логотипа (снизу вверх)
-    UINT32 logo_w = 9 * 6 * scale;
-    UINT32 start_x = (g_width - logo_w) / 2;
+    // ===== Анимация 5 сек (без мерцания) =====
+    UINT32 total_frames = 50;
+    UINT32 y_start = g_height - logo_h;
+    UINT32 delta = (y_start - final_y) / total_frames;
+    if (delta < 1) delta = 1;
     
-    for (UINT32 y = g_height; y > 150; y -= 8) {
-        clear_screen(BLACK);
+    UINT32 prev_y = y_start;
+    
+    draw_logo(start_x, y_start, scale, WHITE);
+    delay(3000000);
+    
+    for (UINT32 i = 1; i < total_frames; i++) {
+        UINT32 y = y_start - i * delta;
+        if (y <= final_y || i == total_frames - 1) y = final_y;
+        
+        fill_rect(start_x, prev_y, logo_w, logo_h, BLACK);
         draw_logo(start_x, y, scale, WHITE);
+        
+        prev_y = y;
         delay(3000000);
+        
+        if (y == final_y) break;
     }
     
-    // Логотип на месте
-    clear_screen(BLACK);
-    draw_logo(start_x, 150, scale, WHITE);
+    draw_logo(start_x, final_y, scale, WHITE);
     
-    // Меню
+    // ===== Меню =====
     draw_menu(scale);
     
     // ===== Ввод клавиш =====
@@ -231,7 +244,7 @@ void kernel_main64(void) {
                     draw_menu(scale);
                 }
             }
-            // Enter
+            // Enter — UnicodeChar 0x0D
             else if (key.UnicodeChar == 0x0D) {
                 draw_booting();
                 while (1) { __asm__ volatile ("hlt"); }
