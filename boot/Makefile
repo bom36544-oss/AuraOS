@@ -1,32 +1,54 @@
-all: auraos.img
+# ===== AuraOS UEFI Build =====
+EFIINC = /usr/include/efi
+EFILIB = /usr/lib
 
-boot.bin: boot.asm
-	nasm -f bin boot.asm -o boot.bin
+CFLAGS = -I$(EFIINC) -I$(EFIINC)/x86_64 -I$(EFIINC)/protocol \
+         -fno-stack-protector -fpic -fshort-wchar -mno-red-zone \
+         -Wall -O2
 
-stage2.bin: stage2.asm
-	nasm -f bin stage2.asm -o stage2.bin
-	truncate -s %512 stage2.bin
+OBJS = main.o
 
-stage3.bin: stage3.asm
-	nasm -f bin stage3.asm -o stage3.bin
-	truncate -s %512 stage3.bin
+all: bootx64.efi image
 
-kernel64.o: kernel64.c
-	gcc -m64 -ffreestanding -fno-pie -fno-stack-protector -mno-red-zone -c kernel64.c -o kernel64.o
+# ELF
+bootx64.so: $(OBJS)
+	ld -shared -Bsymbolic -L$(EFILIB) -T$(EFILIB)/elf_x86_64_efi.lds \
+	   $(OBJS) -lgnuefi -lefi -o $@
 
-kernel64.elf: kernel64.o
-	ld -m elf_x86_64 -T linker64.ld -o kernel64.elf kernel64.o
+# ELF → PE32+ (попробуем разные способы)
+bootx64.efi: bootx64.so
+	objcopy \
+	  -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
+	  -j .rel -j .rela -j .reloc \
+	  --output-target=pei-x86-64 \
+	  --subsystem=10 \
+	  $< $@
 
-kernel64.bin: kernel64.elf
-	objcopy -O binary kernel64.elf kernel64.bin
-	truncate -s %512 kernel64.bin
+%.o: %.c
+	gcc $(CFLAGS) -c $< -o $@
 
-auraos.img: boot.bin stage2.bin stage3.bin kernel64.bin
-	cat boot.bin stage2.bin stage3.bin kernel64.bin > auraos.img
-	truncate -s %512 auraos.img
+# Копируем в ESP
+esp/EFI/BOOT/BOOTX64.EFI: bootx64.efi
+	mkdir -p esp/EFI/BOOT
+	cp bootx64.efi esp/EFI/BOOT/BOOTX64.EFI
 
-run: auraos.img
-	qemu-system-x86_64 -drive format=raw,file=auraos.img -display gtk -m 512
+# FAT32 образ
+image: esp/EFI/BOOT/BOOTX64.EFI
+	dd if=/dev/zero of=auraos-uefi.img bs=1M count=64
+	mkfs.vfat -F 32 auraos-uefi.img
+	mmd -i auraos-uefi.img ::/EFI
+	mmd -i auraos-uefi.img ::/EFI/BOOT
+	mmd -i auraos-uefi.img ::/EFI/AuraOS
+	mcopy -i auraos-uefi.img bootx64.efi ::/EFI/BOOT/BOOTX64.EFI
+
+run: image
+	cp /usr/share/edk2/x64/OVMF_VARS.4m.fd OVMF_VARS.fd
+	qemu-system-x86_64 \
+	  -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+	  -drive if=pflash,format=raw,file=OVMF_VARS.fd \
+	  -drive format=raw,file=auraos-uefi.img,if=ide \
+	  -m 512
 
 clean:
-	rm -f *.bin *.img *.o *.elf
+	rm -f *.o *.so *.efi *.img OVMF_VARS.fd
+	rm -f esp/EFI/BOOT/BOOTX64.EFI
