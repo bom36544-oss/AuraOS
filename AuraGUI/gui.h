@@ -18,6 +18,7 @@ void gui_handle_up(void);
 void gui_handle_down(void);
 void gui_handle_enter(void);
 void gui_handle_esc(void);
+void gui_handle_click(int x, int y);   // ← НОВОЕ
 
 void gui_save_under_cursor(void);
 void gui_restore_under_cursor(void);

@@ -1,4 +1,4 @@
-// ===== AuraOS — ядро (boot + меню + мышь, Y через Y) =====
+// ===== AuraOS — ядро (boot + меню + мышь + клики) =====
 
 #include "kernel.h"
 #include "../AuraGUI/gui.h"
@@ -26,8 +26,7 @@ typedef struct {
     void *WaitForKey;
 } EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
 
-// ===== EFI_SIMPLE_POINTER =====
-// ВАЖНО: поля RelativeMovement* имеют тип INT32 (4 байта), не long long!
+// ===== EFI_SIMPLE_POINTER (INT32!) =====
 typedef struct {
     INT32 RelativeMovementX;
     INT32 RelativeMovementY;
@@ -43,6 +42,11 @@ typedef struct {
 } EFI_SIMPLE_POINTER_PROTOCOL;
 
 extern EFI_SIMPLE_POINTER_PROTOCOL *g_mouse;
+
+// ===== НОВОЕ: состояние ЛКМ и колбэк =====
+extern unsigned char g_mouse_left;
+extern unsigned char g_mouse_left_prev;
+extern void gui_handle_click(int x, int y);
 
 #define COLOR_BLACK 0x00000000
 #define COLOR_WHITE 0x00FFFFFF
@@ -193,40 +197,40 @@ void kernel_main(void) {
             EFI_STATUS st_ms = g_mouse->GetState(g_mouse, &ms);
             
             if (st_ms == 0) {
-                // ===== X = RelativeMovementX, Y = RelativeMovementY =====
                 long long dx = ms.RelativeMovementX;
-                long long dy = ms.RelativeMovementY;   // ← вертикаль (было Z)
+                long long dy = ms.RelativeMovementY;
                 
+                // ===== 1. ДВИЖЕНИЕ КУРСОРА =====
                 if (dx != 0 || dy != 0) {
                     extern void gui_restore_under_cursor(void);
                     extern void gui_draw_cursor(void);
                     extern void gui_save_under_cursor(void);
                     extern void gfx_present_rect(UINT32, UINT32, UINT32, UINT32);
                     
-                    // 1. Стереть старый курсор
                     gui_restore_under_cursor();
                     
-                    // 2. Обновить координаты
-                    //    Если вертикаль пойдёт в обратную сторону — поменяй знак:
-                    //    g_mouse_y -= dy;
                     g_mouse_x += (int)dx;
                     g_mouse_y += (int)dy;
                     
-                    // Ограничить
                     if (g_mouse_x < 0) g_mouse_x = 0;
                     if (g_mouse_y < 0) g_mouse_y = 0;
                     if (g_mouse_x > (int)g_width - 24) g_mouse_x = (int)g_width - 24;
                     if (g_mouse_y > (int)g_height - 40) g_mouse_y = (int)g_height - 40;
                     
-                    // 3. Сохранить фон под новым курсором
                     gui_save_under_cursor();
-                    
-                    // 4. Нарисовать новый курсор
                     gui_draw_cursor();
-                    
-                    // 5. Показать только область курсора
                     gfx_present_rect(g_mouse_x, g_mouse_y, 24, 40);
                 }
+                
+                // ===== 2. КЛИК ЛКМ =====
+                g_mouse_left = ms.LeftButton ? 1 : 0;
+                
+                // Фронт: было 0 → стало 1 = новое нажатие
+                if (g_mouse_left == 1 && g_mouse_left_prev == 0) {
+                    gui_handle_click(g_mouse_x, g_mouse_y);
+                }
+                
+                g_mouse_left_prev = g_mouse_left;
             }
         }
         

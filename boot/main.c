@@ -96,6 +96,10 @@ int g_mouse_y = 200;
 
 EFI_SIMPLE_POINTER_PROTOCOL *g_mouse = 0;
 
+// ===== НОВОЕ: состояние кнопки мыши =====
+unsigned char g_mouse_left = 0;       // текущее состояние ЛКМ (0/1)
+unsigned char g_mouse_left_prev = 0;  // состояние в прошлом кадре
+
 // ===== Форс линковки =====
 extern void kernel_main(void);
 extern void gui_main(void);
